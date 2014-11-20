@@ -27,11 +27,13 @@ namespace XAMLGameFunctions
         /// <param name="overflow">Thickness of the edge around the marked area.</param>
         /// <param name="areaXCount">Width of area to draw on.</param>
         /// <param name="areaYCount">Height of area to draw on.</param>
-        /// <param name="overflowEdges">True if the overflow is to go beyond the area to draw on.</param>
         /// <returns>Path object covering the given tiles.</returns>
         public static Path GenerateCoverage(PointInt[] tiles, double tileWidth, double overflow, int areaXCount,
             int areaYCount)
         {
+            if (overflow < 0)
+                return InternalGenerateCoverage(tiles, tileWidth, overflow, 0, 0, true);
+
             foreach (var tile in tiles)
             {
                 if (tile.X < 0 || tile.Y < 0 || tile.X >= areaXCount || tile.Y >= areaYCount)
@@ -48,9 +50,6 @@ namespace XAMLGameFunctions
         /// <param name="tiles">Tiles to mark.</param>
         /// <param name="tileWidth">Tile side length.</param>
         /// <param name="overflow">Thickness of the edge around the marked area.</param>
-        /// <param name="areaXCount">Width of area to draw on.</param>
-        /// <param name="areaYCount">Height of area to draw on.</param>
-        /// <param name="overflowEdges">True if the overflow is to go beyond the area to draw on.</param>
         /// <returns>Path object covering the given tiles.</returns>
         public static Path GenerateCoverage(PointInt[] tiles, double tileWidth, double overflow)
         {
