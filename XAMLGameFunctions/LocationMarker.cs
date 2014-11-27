@@ -56,7 +56,49 @@ namespace XAMLGameFunctions
             return InternalGenerateCoverage(tiles, tileWidth, overflow, 0, 0, true);
         }
 
-        static Path InternalGenerateCoverage(PointInt[] tiles, double tileWidth, double overflow, int areaXCount, int areaYCount, bool overflowEdges = true)
+        /// <summary>
+        /// Generates a Path object covering the given tiles with wobbly edges. Not going over the specified max tiles or below 0.
+        /// </summary>
+        /// <param name="tiles">Tiles to mark.</param>
+        /// <param name="tileWidth">Tile side length.</param>
+        /// <param name="overflow">Thickness of the edge around the marked area.</param>
+        /// <param name="areaXCount">Width of area to draw on.</param>
+        /// <param name="areaYCount">Height of area to draw on.</param>
+        /// <param name="wobbliness">Wobbliness of edges.</param>
+        /// <returns>Path object covering the given tiles.</returns>
+        public static Path GenerateCoverage(PointInt[] tiles, double tileWidth, double overflow, int areaXCount,
+            int areaYCount, double wobbliness)
+        {
+            if (overflow < 0)
+                return InternalGenerateCoverage(tiles, tileWidth, overflow, 0, 0, true);
+
+            foreach (var tile in tiles)
+            {
+                if (tile.X < 0 || tile.Y < 0 || tile.X >= areaXCount || tile.Y >= areaYCount)
+                    throw new ArgumentException(
+                        string.Format("The tile {0} was outside the bounds of the specified area.", tile));
+            }
+
+            return InternalGenerateCoverage(tiles, tileWidth, overflow, areaXCount, areaYCount, false, wobbliness);
+        }
+
+        /// <summary>
+        /// Generates a Path object covering the given tiles with wobbly edges.
+        /// </summary>
+        /// <param name="tiles">Tiles to mark.</param>
+        /// <param name="tileWidth">Tile side length.</param>
+        /// <param name="overflow">Thickness of the edge around the marked area.</param>
+        /// <param name="wobbliness">Wobbliness of edges.</param>
+        /// <returns>Path object covering the given tiles.</returns>
+        public static Path GenerateCoverage(PointInt[] tiles, double tileWidth, double overflow, double wobbliness)
+        {
+            return InternalGenerateCoverage(tiles, tileWidth, overflow, 0, 0, true, wobbliness);
+        }
+
+
+
+
+        static Path InternalGenerateCoverage(PointInt[] tiles, double tileWidth, double overflow, int areaXCount, int areaYCount, bool overflowEdges = true, double wobbliness = 0)
         {
             bool negativeOverflow = overflow < 0;
 
@@ -87,12 +129,12 @@ namespace XAMLGameFunctions
             PathFigureCollection pathFigureCollection = new PathFigureCollection();
             foreach (PointInt[] area in discreteAreas)
             {
-                pathFigureCollection.Add(GeneratePathFigure(overflow, area, tileWidth, areaXCount, areaYCount, overflowEdges, false));
+                pathFigureCollection.Add(GeneratePathFigure(overflow, area, tileWidth, areaXCount, areaYCount, overflowEdges, false, wobbliness));
             }
 
             foreach (PointInt[] hole in holes)
             {
-                pathFigureCollection.Add(GeneratePathFigure(overflow * -1, hole, tileWidth, areaXCount, areaYCount, true, true));
+                pathFigureCollection.Add(GeneratePathFigure(overflow * -1, hole, tileWidth, areaXCount, areaYCount, true, true, wobbliness));
             }
 
             PathGeometry pathGeometry = new PathGeometry();
@@ -207,7 +249,7 @@ namespace XAMLGameFunctions
             }
         }
 
-        static PathFigure GeneratePathFigure(double overflow, PointInt[] tiles, double tileWidth, int x, int y, bool overflowEdges, bool drawingHole)
+        static PathFigure GeneratePathFigure(double overflow, PointInt[] tiles, double tileWidth, int x, int y, bool overflowEdges, bool drawingHole, double wobbliness)
         {
             // Find first tile side not blocked by another tile
             bool freeTileFound = false;
@@ -267,7 +309,7 @@ namespace XAMLGameFunctions
 
             do
             {
-                lastDrawnPoint = DrawNextSegments(pathSegmentCollection, ref currentTile, tiles, ref side, ref drawDirection, overflow, tileWidth, x, y, overflowEdges, drawingHole);
+                lastDrawnPoint = DrawNextSegments(pathSegmentCollection, ref currentTile, tiles, ref side, ref drawDirection, overflow, tileWidth, x, y, lastDrawnPoint, wobbliness, overflowEdges, drawingHole);
             } while (lastDrawnPoint != startPoint);
 
             PathFigure pathFigure = new PathFigure();
@@ -347,7 +389,7 @@ namespace XAMLGameFunctions
             return tileFound;
         }
 
-        static Point DrawNextSegments(PathSegmentCollection pathSegmentCollection, ref PointInt tile, PointInt[] tileList, ref PointInt side, ref PointInt direction, double overflow, double tileWidth, int boardX, int boardY, bool overflowEdges, bool drawingHole)
+        static Point DrawNextSegments(PathSegmentCollection pathSegmentCollection, ref PointInt tile, PointInt[] tileList, ref PointInt side, ref PointInt direction, double overflow, double tileWidth, int boardX, int boardY, Point lastPoint, double wobbliness, bool overflowEdges, bool drawingHole)
         {
             // Returns end point of the segments added
             // Changes direction, side and tile to the next segment to be drawn
@@ -373,7 +415,10 @@ namespace XAMLGameFunctions
                     lineEnd.Y -= direction.Y * 2 * overflow;
                 }
 
-                DrawLine(pathSegmentCollection, lineEnd);
+                if (wobbliness > 0)
+                    DrawCurvedLine(pathSegmentCollection, lineEnd, lastPoint, wobbliness, direction);
+                else
+                    DrawLine(pathSegmentCollection, lineEnd);
 
                 tile.X += direction.X + side.X;
                 tile.Y += direction.Y + side.Y;
@@ -404,7 +449,11 @@ namespace XAMLGameFunctions
             else if (IsTileInArray(new PointInt(tile.X + direction.X, tile.Y + direction.Y), tileList))
             { // Tile found straight ahead from current tile
                 Point lineEnd = GetStandardLineEnd(tile, side, direction, overflow, tileWidth, isDrawingOnEdge && !overflowEdges);
-                DrawLine(pathSegmentCollection, lineEnd);
+
+                if (wobbliness>0)
+                    DrawCurvedLine(pathSegmentCollection, lineEnd, lastPoint, wobbliness, direction);
+                else
+                    DrawLine(pathSegmentCollection, lineEnd);
 
                 tile.X += direction.X;
                 tile.Y += direction.Y;
@@ -434,7 +483,10 @@ namespace XAMLGameFunctions
                     lineEnd.Y -= direction.Y * overflow;
                 }
 
-                DrawLine(pathSegmentCollection, lineEnd);
+                if (wobbliness>0)
+                    DrawCurvedLine(pathSegmentCollection, lineEnd, lastPoint, wobbliness, direction);
+                else
+                    DrawLine(pathSegmentCollection, lineEnd);
 
                 PointInt newSide = RotateVector90(side, false);
                 side.X = newSide.X;
@@ -474,6 +526,27 @@ namespace XAMLGameFunctions
 
 
             return segment2End;
+        }
+
+        private static void DrawCurvedLine(PathSegmentCollection pathSegmentCollection, Point lineEnd, Point lineStart, double wobbliness, PointInt direction)
+        {
+            BezierSegment curvedLine = new BezierSegment();
+            curvedLine.Point3 = lineEnd;
+
+            double lineLength = Math.Max(Math.Abs(lineEnd.X - lineStart.X), Math.Abs(lineEnd.Y - lineStart.Y));
+
+            if (direction.X == 0)
+            {
+                curvedLine.Point1 = new Point(lineEnd.X + wobbliness, lineStart.Y + (direction.Y * lineLength / 3));
+                curvedLine.Point2 = new Point(lineEnd.X - wobbliness, lineEnd.Y - (direction.Y * lineLength / 3));
+            }
+            else
+            {
+                curvedLine.Point1 = new Point(lineStart.X + (direction.X * lineLength / 3), lineEnd.Y - wobbliness);
+                curvedLine.Point2 = new Point(lineEnd.X - (direction.X * lineLength / 3), lineEnd.Y + wobbliness);
+            }
+
+            pathSegmentCollection.Add(curvedLine);
         }
 
         private static Point GetStandardLineEnd(PointInt tile, PointInt side, PointInt direction, double overflow, double tileWidth, bool isDrawingOnEdge = false)
